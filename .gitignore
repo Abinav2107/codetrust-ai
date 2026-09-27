@@ -1,0 +1,42 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+venv_admin/
+.venv/
+env/
+
+# ─── Secrets — NEVER commit these ─────────────────────────────────────────────
+.env
+# Keep examples
+!.env.example
+
+# ─── Build artefacts ──────────────────────────────────────────────────────────
+*.egg-info/
+dist/
+build/
+
+# ─── Test / coverage ──────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ─── Database (local SQLite) ──────────────────────────────────────────────────
+*.db
+*.sqlite3
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store

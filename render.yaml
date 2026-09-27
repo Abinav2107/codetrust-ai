@@ -1,0 +1,91 @@
+# render.yaml — Render Blueprint for CodeTrust AI Backend
+# https://render.com/docs/blueprint-spec
+#
+# Deploy by connecting this repo to Render and selecting "Blueprint" in the dashboard,
+# or push to a branch that Render is watching.
+#
+# IMPORTANT — fill in every env var marked sync: false before your first deploy.
+
+services:
+  - type: web
+    name: codetrust-ai-backend
+    runtime: python
+    region: oregon           # change to your preferred region if needed
+    plan: free               # upgrade to "starter" or higher for persistent disk / always-on
+
+    buildCommand: pip install -r requirements-prod.txt
+
+    # Render injects $PORT automatically; uvicorn must bind to 0.0.0.0:$PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      # ── Application ──────────────────────────────────────────────────────
+      - key: APP_ENV
+        value: production
+
+      - key: DEBUG
+        value: "False"
+
+      - key: API_V1_PREFIX
+        value: /api/v1
+
+      # ── Security ─────────────────────────────────────────────────────────
+      # Generate a strong random key: python -c "import secrets; print(secrets.token_hex(32))"
+      - key: API_KEY
+        sync: false          # set manually in the Render dashboard — never commit the value
+
+      - key: REQUIRE_API_KEY
+        value: "True"
+
+      # ── CORS ─────────────────────────────────────────────────────────────
+      # Set to your deployed frontend URL once you have it.
+      # Example: https://codetrust-ai.onrender.com
+      # Multiple origins: https://app.example.com,https://www.example.com
+      - key: CORS_ORIGINS
+        sync: false          # set manually in the Render dashboard
+
+      # ── Database ─────────────────────────────────────────────────────────
+      # Render's filesystem is ephemeral — SQLite data is lost on restart.
+      # Attach a Render PostgreSQL instance (see databases section below) and
+      # paste its Internal Database URL here as DATABASE_URL.
+      # Format: postgresql+asyncpg://user:password@host:5432/dbname
+      - key: DATABASE_URL
+        sync: false          # set manually — use the Internal Database URL from Render
+
+      # ── Rate Limiting ─────────────────────────────────────────────────────
+      - key: RATE_LIMIT_ANALYZE
+        value: "30/minute"
+
+      - key: RATE_LIMIT_DEFAULT
+        value: "120/minute"
+
+      # ── AI Agent ─────────────────────────────────────────────────────────
+      # Set MOCK_AI_AGENT=False and provide the real URL once the agent is deployed.
+      - key: MOCK_AI_AGENT
+        value: "True"
+
+      - key: AI_AGENT_SERVICE_URL
+        value: "http://localhost:8001/agent/analyze"   # update when agent is deployed
+
+      - key: AI_AGENT_TIMEOUT_SECONDS
+        value: "30.0"
+
+      # ── Sandboxing ────────────────────────────────────────────────────────
+      - key: MAX_CODE_SIZE_BYTES
+        value: "65536"
+
+      - key: SANDBOX_EXECUTION_TIMEOUT
+        value: "5.0"
+
+# ── Databases ────────────────────────────────────────────────────────────────
+# Uncomment this block to provision a managed PostgreSQL instance on Render.
+# After it's created, copy its "Internal Database URL" into DATABASE_URL above
+# (replace "postgresql://" with "postgresql+asyncpg://").
+#
+# databases:
+#   - name: codetrust-ai-db
+#     databaseName: codetrust_ai
+#     user: codetrust_ai_user
+#     plan: free
