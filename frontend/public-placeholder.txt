@@ -1,0 +1,1 @@
+This file keeps the root easy to inspect. Add public assets under /public later (favicon, logos, screenshots, etc.).
