@@ -1,9 +1,10 @@
 import { TestTable } from '../components/tests/TestTable';
 import { StatCard } from '../components/dashboard/StatCard';
-import { tests } from '../data/tests';
+import { tests as seedTests } from '../data/tests';
+import type { TestResult } from '../types';
 import { Icon } from '../components/ui/Icon';
 
-export function TestsPage({ onOpen }: { onOpen: (id: string) => void }) {
+export function TestsPage({ onOpen, tests = seedTests }: { onOpen: (id: string) => void; tests?: TestResult[] }) {
   const passed = tests.filter(t => t.status === 'passed').length;
   const failed = tests.filter(t => t.status === 'failed').length;
   const skipped = tests.filter(t => t.status === 'skipped').length;

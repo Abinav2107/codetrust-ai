@@ -14,10 +14,11 @@ import { SettingsPage } from './pages/SettingsPage';
 import { IssueDetail } from './components/issues/IssueDetail';
 import { TestDetail } from './components/tests/TestDetail';
 import { issues as seedIssues } from './data/issues';
-import { tests } from './data/tests';
+import { tests as seedTests } from './data/tests';
+import { codeFiles } from './data/files';
 import { projects as seedProjects } from './data/projects';
 import { runProjectAnalysis } from './services/projectService';
-import type { Issue, Project, ThemeMode } from './types';
+import type { Issue, Project, TestResult, ThemeMode } from './types';
 import { useHotkeys } from './hooks/useHotkeys';
 import { Icon } from './components/ui/Icon';
 
@@ -30,11 +31,17 @@ export default function App() {
   const [projectRepo, setProjectRepo] = useState('');
   const [projects, setProjects] = useState<Project[]>(() => seedProjects.map(p => ({ ...p })));
   const [issues, setIssues] = useState<Issue[]>(() => seedIssues.map(i => ({ ...i })));
+  const [testsList, setTestsList] = useState<TestResult[]>(() => seedTests.map(t => ({ ...t })));
   const [analyzing, setAnalyzing] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => (localStorage.getItem('debugagent-theme') as ThemeMode) || 'dark');
   const [commandOpen, setCommandOpen] = useState(false);
   const [codeOverrides, setCodeOverrides] = useState<Record<string, Record<number, string>>>({});
   const toastTimer = useRef<number | null>(null);
+
+  const issueCount = useMemo(() => issues.filter(i => i.status === 'open').length, [issues]);
+  const selectedIssue = issues.find(i => i.id === detailId) ?? issues[0];
+  const selectedTest = testsList.find(t => t.id === detailId) ?? testsList.find(t => t.status === 'failed') ?? testsList[0];
+  const currentProject = projects[0];
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -73,29 +80,53 @@ export default function App() {
     return () => window.removeEventListener('debugagent:open-issue', handler);
   }, [openIssue]);
 
-  const handleRunAnalysis = useCallback(async () => {
+  const handleRunAnalysis = useCallback(async (targetFile?: string) => {
     const current = projects[0];
     if (!current || analyzing) return;
     setAnalyzing(true);
     setProjects(prev => prev.map(p => p.id === current.id ? { ...p, status: 'running' } : p));
     try {
-      await runProjectAnalysis(current.name);
-      setProjects(prev => prev.map(p => p.id === current.id ? { ...p, status: 'complete', lastRun: 'just now' } : p));
-      showToast('Analysis completed successfully');
+      const activeFile = targetFile || selectedIssue?.file || 'src/services/auth.ts';
+      const fileData = codeFiles[activeFile];
+      const sourceCode = fileData?.lines ? fileData.lines.map(l => l.code).join('\n') : undefined;
+
+      const outcome = await runProjectAnalysis(current.name, activeFile, sourceCode);
+
+      if (outcome.issues && outcome.issues.length > 0) {
+        setIssues(outcome.issues);
+      }
+      if (outcome.tests && outcome.tests.length > 0) {
+        setTestsList(outcome.tests);
+      }
+
+      if (outcome.backendData?.verification_report) {
+        const vr = outcome.backendData.verification_report;
+        showToast(`AI Verified: ${vr.status.toUpperCase()} (${(vr.confidence * 100).toFixed(0)}% confidence)`);
+      } else {
+        showToast('Analysis completed successfully');
+      }
+
+      setProjects(prev => prev.map(p => p.id === current.id ? {
+        ...p,
+        status: 'complete',
+        lastRun: 'just now',
+        issues: outcome.issues ? outcome.issues.filter(i => i.status === 'open').length : p.issues,
+        tests: outcome.tests ? `${outcome.tests.filter(t => t.status === 'passed').length}/${outcome.tests.length} passing` : p.tests,
+      } : p));
     } catch {
       setProjects(prev => prev.map(p => p.id === current.id ? { ...p, status: 'error' } : p));
       showToast('Analysis failed — try again');
     } finally {
       setAnalyzing(false);
     }
-  }, [analyzing, projects, showToast]);
+  }, [analyzing, projects, selectedIssue, showToast]);
 
   const handleApplyFix = useCallback((id: string) => {
     const target = issues.find(issue => issue.id === id);
     if (target) setCodeOverrides(prev => ({ ...prev, [target.file]: { ...(prev[target.file] ?? {}), [target.line]: target.suggested.split('\n')[0] } }));
     setIssues(prev => prev.map(issue => issue.id === id ? { ...issue, status: 'fixed' } : issue));
     showToast('Fix marked as applied');
-  }, [showToast]);
+  }, [issues, showToast]);
 
   const createProject = () => {
     const name = projectName.trim();
@@ -118,11 +149,6 @@ export default function App() {
     navigate('projects');
   };
 
-  const issueCount = useMemo(() => issues.filter(i => i.status === 'open').length, [issues]);
-  const selectedIssue = issues.find(i => i.id === detailId) ?? issues[0];
-  const selectedTest = tests.find(t => t.id === detailId) ?? tests.find(t => t.status === 'failed')!;
-  const currentProject = projects[0];
-
   useHotkeys({
     'mod+k': (e) => { e.preventDefault(); setCommandOpen(true); },
     'mod+/': (e) => { e.preventDefault(); document.querySelector<HTMLInputElement>('.chat-input input')?.focus(); },
@@ -140,14 +166,14 @@ export default function App() {
   ];
 
   const page = (() => {
-    if (view === 'dashboard') return <DashboardPage projects={projects} issues={issues} tests={tests} onNavigate={navigate} onNewProject={() => setNewProjectOpen(true)} onRun={() => void handleRunAnalysis()} analyzing={analyzing} />;
+    if (view === 'dashboard') return <DashboardPage projects={projects} issues={issues} tests={testsList} onNavigate={navigate} onNewProject={() => setNewProjectOpen(true)} onRun={() => void handleRunAnalysis()} analyzing={analyzing} />;
     if (view === 'projects') return <ProjectsPage projects={projects} onNewProject={() => setNewProjectOpen(true)} onOpen={() => navigate('workspace')} />;
     if (view === 'workspace') return <WorkspacePage onNavigate={navigate} onToast={showToast} onRun={handleRunAnalysis} analyzing={analyzing} projectName={currentProject?.name ?? 'acme-dashboard'} codeOverrides={codeOverrides} initialFile={selectedIssue?.file} />;
     if (view === 'issues') return <IssuesPage issues={issues} onOpen={openIssue} />;
     if (view === 'issue-detail') return <IssueDetail issue={selectedIssue} onBack={() => navigate('issues')} onApply={() => handleApplyFix(selectedIssue.id)} onAsk={() => navigate('workspace')} />;
-    if (view === 'tests') return <TestsPage onOpen={openTest} />;
+    if (view === 'tests') return <TestsPage onOpen={openTest} tests={testsList} />;
     if (view === 'test-detail') return <TestDetail test={selectedTest} onBack={() => navigate('tests')} onCode={() => navigate('workspace')} onAsk={() => navigate('workspace')} />;
-    if (view === 'report') return <ReportPage issues={issues} tests={tests} onToast={showToast} />;
+    if (view === 'report') return <ReportPage issues={issues} tests={testsList} onToast={showToast} />;
     return <SettingsPage theme={theme} onThemeChange={setTheme} />;
   })();
 
